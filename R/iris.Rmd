@@ -1,0 +1,249 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Definición del problema
+
+Crear un modelo de regresión con el objetivo de predecir el ancho del sépalo.
+
+
+## Iris
+
+La base de datos antes mencionada contiene información acerca de la especies de flor de iris existen tres tipos en este datset setosa,virginica y versicolor.
+
+A su ves tiene información acerca del pétalo y el sépalo ambos con sus respectivas medidas de ancho y largo respectivamente.
+
+
+
+
+### Importaciones de las librerias
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(DataExplorer)
+library(ggplot2)
+library(dplyr)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(caret)
+```
+
+
+```{r}
+df<-read.csv("C:\\Users\\amado\\Desktop\\Ciencias de datos\\Bases de datos\\Iris.csv")
+```
+
+```{r}
+names(df)
+```
+### Selección de variables
+
+Seleccionamos las variables que tengan más relación con el grosor del pétalo.
+
+```{r}
+df<- df %>% 
+  select(PetalLengthCm,PetalWidthCm,Species)
+  
+```
+```{r}
+summary(df)
+```
+```{r}
+df$Species<-as.factor(df$Species)
+```
+
+# Análisis Exploratorio
+
+## ¿Qué especie de iris tiene mayor longitud del péatalo?
+
+```{r}
+ggplot(data=df,aes(x=Species,y=PetalLengthCm,fill=Species)) +  geom_boxplot(fill=c('cornsilk','skyblue','lightgreen')) +
+theme(legend.position = 'top') + theme_light() + ggtitle('Petal Length vs Species')
+```
+## ¿Qué especie de iris tiene mayor grosor péatalo?
+
+```{r}
+ggplot(data=df,aes(x=Species,y=PetalWidthCm,fill=Species)) +  geom_boxplot(fill=c('cornsilk','skyblue','lightgreen')) +
+theme(legend.position = 'top') + theme_light() + ggtitle('Petal Width vs Species')
+```
+Tanto para la logitud y el grosor del sépalo la especie de flor iris virginica es superior en ambos atributos ya mencionados.
+
+A su vez se aprecia valores fuera de lo normal.
+
+
+
+```{r}
+ggplot(data=df,aes(x=PetalLengthCm,y=PetalWidthCm,color=Species)) +  geom_point(size=3,alpha=0.3) +
+ theme_light() + ggtitle('Petal Length vs Petal Width vs Specie') + facet_grid(Species~.) + geom_smooth(method = 'lm') + theme(legend.position = 'top')
+  
+
+```
+
+Hay una clara relación de tendecia lineal entre ambos atributos.
+
+
+```{r}
+plot_correlation(df,type = 'continuous',title = 'Correlation Matrix')
+```
+
+Hay un alto grado de coeficiente de relación de Pearson que va de 0 a 1 si es una relación positiva caso contrario de 0 a -1 si.
+
+
+# Ingeniería de carácteristicas
+
+
+```{r}
+iris_splits<-split(df,df$Species)
+
+setosa<-iris_splits[[1]]
+versicolor<-iris_splits[[2]]
+virginica<-iris_splits[[3]]
+```
+
+Creamos pequeños subconjuntos de acuerdo al especie de iris.
+
+```{r}
+lower_limit<-function(x){mean(x)-1.5*sd(x)}
+upper_limit<-function(x){mean(x)+1.5*sd(x)}
+```
+
+### Limite inferior  y superior longitud del pétalo
+
+```{r}
+aggregate(PetalLengthCm~Species,FUN=lower_limit,data=df)
+```
+
+
+```{r}
+aggregate(PetalLengthCm~Species,FUN=upper_limit,data=df)
+```
+
+
+### Limite  superior grosor del pétalo.
+
+
+```{r}
+aggregate(PetalWidthCm~Species,FUN=upper_limit,data=df)
+```
+
+
+```{r}
+min_lim_replace<-function(x,limit){
+  
+  return(ifelse(x<limit,sample(x[x>limit],replace = T),x))
+}
+
+max_lim_replace<-function(x,limit){
+  
+  
+  return(ifelse(x>limit,sample(x[x<limit],replace = T),x))
+}
+
+```
+
+Remplazaremos los valores atípicos por valores que estan en un rango normal.
+
+```{r}
+setosa$PetalLengthCm<-min_lim_replace(setosa$PetalLengthCm,1.2037)
+
+setosa$PetalLengthCm<-ifelse(setosa$PetalLengthCm>=1.7,
+                             sample(setosa$PetalLengthCm[setosa$PetalLengthCm<1.7],
+                                    replace = T),
+                             setosa$PetalLengthCm)
+                                   
+```
+
+
+```{r}
+versicolor$PetalLengthCm<-min_lim_replace(versicolor$PetalLengthCm,3.555134)
+```
+
+```{r}
+setosa$PetalWidthCm<-max_lim_replace(setosa$PetalWidthCm,0.4048143)
+
+```
+
+
+```{r}
+new_df<-rbind.data.frame(setosa,versicolor,virginica)
+```
+
+```{r}
+
+boxplot(PetalLengthCm~Species,data=new_df,main='Elimnate outlires')
+
+```
+
+```{r}
+boxplot(PetalWidthCm~Species,data=new_df,main='Eliminate outlires')
+```
+### Escalado de los datos
+```{r}
+new_df$PetalLengthCm<-scale(new_df$PetalLengthCm)
+```
+
+Es buena práctica estandarizar los datos con el objetivo de no manejar valores tan grandes pero tampo tan pequeños.
+
+
+
+### División datos de entrenamiento y validación.
+
+```{r}
+set.seed(2018)
+
+training.ids<-createDataPartition(new_df$PetalWidthCm,p=0.7,list=F)
+
+train<-new_df[training.ids,]
+test<-new_df[-training.ids,]
+```
+
+# Creación del modelo.
+
+El mismo modelo crea variables ficticias para las variables tipo factor.
+
+```{r}
+lm=lm(PetalWidthCm~.,data=train)
+
+summary(lm)
+```
+
+Entre más asteriscos tenga las variables mayor sera el impacto de las variables al valor que tratamos predecir.
+
+
+```{r}
+pred<-(predict(lm,newdata = test))
+
+
+R2(test$PetalWidthCm,pred)
+```
+```{r}
+test[,c('Predicted values')]<-pred
+```
+
+```{r}
+test[,c('PetalWidthCm','Predicted values')]
+```
+
+
+Hay muy poca variabilidad entre los valores originales y predichos ,cabe resaltar que la unidad con la que se trabajo es centimitros en la mayoria de los casos la diferencia apenas son unos cuantos milimietros.
+
+
+
+# Guardamos el modelo
+
+
+```{r}
+save(lm,file = 'C:\\Users\\amado\\Desktop\\Blog\\petal_width_lm.Rda')
+```
+
+
+
+
+
+
